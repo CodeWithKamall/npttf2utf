@@ -95,13 +95,36 @@ unicodeToPreetiDict = \
         "।": ".",
         "्": "\\",
         "ऊ": "pm",
+        "ऐ": "P]",
+        "ऋ": "C",
+        "ः": "M",
+        "ऽ": "˜",
+        "ॐ": "ç",
+        "B": "B",
+        "4": "4",
+        "2": "2",
+        "å": "å",
+        "ß": "ß",
+        "¢": "¢",
         "-": " ",
         "(": "-",
         ")": "_"
     }
 
+HALF_CONSONANTS = set('WERTYUXASDGHJK:ZVNIi0~')
+
 
 def normalizeUnicode(unicodetext):
+    # Pre-collapse 'द' composite ligatures so hraswo-i ('l') and reph ('{') treat them as single glyphs
+    unicodetext = (
+        unicodetext
+        .replace('द्य', 'B')
+        .replace('द्ध', '4')
+        .replace('द्द', '2')
+        .replace('द्व', 'å')
+        .replace('द्म', 'ß')
+        .replace('द्घ', '¢')
+    )
     index = -1
     normalized = ''
     while index + 1 < len(unicodetext):
@@ -113,7 +136,7 @@ def normalizeUnicode(unicodetext):
                     if unicodetext[index + 1] == '्' and unicodetext[index + 2] != ' ' and unicodetext[index+2] != '।' \
                             and unicodetext[index + 2] != ',':
                         if unicodetext[index + 2] != 'र':
-                            if unicodeToPreetiDict[character] in list('wertyuxasdghjkzvn'):
+                            if character in unicodeToPreetiDict and unicodeToPreetiDict[character] in list('wertyuxasdghjkzvn'):
                                 normalized += chr(ord(unicodeToPreetiDict[character]) - 32)
                                 index += 1
                                 continue
@@ -125,7 +148,15 @@ def normalizeUnicode(unicodetext):
                                 normalized += 'i'
                                 index += 1
                                 continue
-                if unicodetext[index - 1] != 'र' and character == '्' and unicodetext[index + 1] == 'र':
+                            elif character == 'ण':
+                                normalized += '0'
+                                index += 1
+                                continue
+                            elif character == 'ञ':
+                                normalized += '~'
+                                index += 1
+                                continue
+                if index > 0 and unicodetext[index - 1] != 'र' and character == '्' and unicodetext[index + 1] == 'र':
                     # for खुट्टा चिर्ने चिन्ह in the likes of क्रम and ट्रक
                     if unicodetext[index - 1] != 'ट' and unicodetext[index - 1] != 'ठ' and unicodetext[index-1] != 'ड':
                         normalized += '|'  # for sign as in क्रम
@@ -163,8 +194,8 @@ def convert(unicodestring):
                     index += 1
                     continue
 
-                if normalizedunicodetext[index + 2] == 'ि':  # for constructs like त्ति
-                    if character in list('WERTYUXASDGHJK:ZVN'):
+                if normalizedunicodetext[index + 2] == 'ि':  # for constructs like त्ति, पण्डित, दृष्टि
+                    if character in HALF_CONSONANTS:
                         if normalizedunicodetext[index + 1] != 'q':  # if not like न्त्रि
                             converted += 'l' + character + unicodeToPreetiDict[normalizedunicodetext[index + 1]]
                             index += 2
@@ -174,26 +205,37 @@ def convert(unicodestring):
                             index += 2
                             continue
 
-                if normalizedunicodetext[index + 1] == '्' and character == 'र':  # for reph as in वार्ता
-                    if normalizedunicodetext[index + 3] == 'ा' or normalizedunicodetext[index + 3] == 'ो' or \
-                            normalizedunicodetext[index + 3] == 'ौ' or normalizedunicodetext[index + 3] == 'े' or \
-                            normalizedunicodetext[index + 3] == 'ै' or normalizedunicodetext[index + 3] == 'ी':
-                        converted += unicodeToPreetiDict[normalizedunicodetext[index + 2]] + unicodeToPreetiDict[
-                            normalizedunicodetext[index + 3]] + '{'
-                        index += 3
+                if character == 'र' and normalizedunicodetext[index + 1] == '्' and index + 2 < len(normalizedunicodetext):
+                    # Reph ('{') as in दीर्घ (bL3{), वार्ता (jftf{), आचार्य (cfrfo{), गर्नु (ug'{), दुर्व्यवहार (b'Jo{jxf/)
+                    pos = index + 2
+                    cluster_preeti = ''
+                    while pos < len(normalizedunicodetext) and normalizedunicodetext[pos] in HALF_CONSONANTS:
+                        cluster_preeti += normalizedunicodetext[pos]
+                        pos += 1
+                    if pos < len(normalizedunicodetext):
+                        base_char = normalizedunicodetext[pos]
+                        cluster_preeti += unicodeToPreetiDict.get(base_char, base_char)
+                        pos += 1
+                        if pos < len(normalizedunicodetext) and normalizedunicodetext[pos] in ('|', '«'):
+                            cluster_preeti += normalizedunicodetext[pos]
+                            pos += 1
+                        if pos < len(normalizedunicodetext):
+                            next_matra = normalizedunicodetext[pos]
+                            if next_matra in ('ा', 'ो', 'ौ', 'े', 'ै', 'ी', 'ु', 'ू', 'ृ'):
+                                converted += cluster_preeti + unicodeToPreetiDict[next_matra] + '{'
+                                index = pos
+                                continue
+                            elif next_matra == 'ि':
+                                converted += unicodeToPreetiDict[next_matra] + cluster_preeti + '{'
+                                index = pos
+                                continue
+                        converted += cluster_preeti + '{'
+                        index = pos - 1
                         continue
-                    elif normalizedunicodetext[index + 3] == 'ि':
-                        converted += unicodeToPreetiDict[normalizedunicodetext[index + 3]] + unicodeToPreetiDict[
-                            normalizedunicodetext[index + 2]] + '{'
-                        index += 3
-                        continue
-                    converted += unicodeToPreetiDict[normalizedunicodetext[index + 2]] + '{'
-                    index += 2
-                    continue
 
                 if normalizedunicodetext[index + 3] == 'ि':  # for the likes of ष्ट्रिय
                     if normalizedunicodetext[index + 2] == '|' or normalizedunicodetext[index + 2] == '«':
-                        if character in list('WERTYUXASDGHJK:ZVNIi'):
+                        if character in HALF_CONSONANTS:
                             converted += 'l' + character + unicodeToPreetiDict[normalizedunicodetext[index + 1]] + \
                                          normalizedunicodetext[index + 2]
                             index += 3
@@ -207,13 +249,22 @@ def convert(unicodestring):
 
     converted = converted.replace('Si', 'I')  # Si in preeti is aadha ka aadha ष, so replace with I which is aadha क्ष
     converted = converted.replace('H`', '1')  # H` is the product of composite nature of unicode ज्ञ
-    converted = converted.replace('b\w', '4')  # b\w means in preeti द halanta ध, so replace the composite
+    converted = converted.replace('b\\lo', 'lB')  # composite for द्यि
+    converted = converted.replace('b\\o', 'B')  # composite for द्य (e.g. विद्युतीय -> ljB'tLo)
+    converted = converted.replace('b\\lw', 'l4')  # composite for द्धि (e.g. बुद्धि -> a'l4)
+    converted = converted.replace('b\\w', '4')  # b\w means in preeti द halanta ध, so replace the composite
+    converted = converted.replace('b\\lb', 'l2')  # composite for द्दि
+    converted = converted.replace('b\\b', '2')  # composite for द्द (e.g. उद्देश्य -> p2]Zo)
     converted = converted.replace('z|', '>')  # composite for श्र
     converted = converted.replace("/'", '?')  # composite for रु
     converted = converted.replace('/"', '¿')  # composite for रू
     converted = converted.replace('Tt', 'Q')  # composite for त्त
-    converted = converted.replace('b\lj', 'lå')  # composite for द्वि
-    converted = converted.replace('b\j', 'å')  # composite for द्व
+    converted = converted.replace('b\\lj', 'lå')  # composite for द्वि
+    converted = converted.replace('b\\j', 'å')  # composite for द्व
+    converted = converted.replace('b\\ld', 'lß')  # composite for द्मि
+    converted = converted.replace('b\\d', 'ß')  # composite for द्म
+    converted = converted.replace('b\\l3', 'l¢')  # composite for द्घि
+    converted = converted.replace('b\\3', '¢')  # composite for द्घ
     converted = converted.replace('0f\\', '0')  # composite for ण् to get the aadha ण in say गण्डक
     converted = converted.replace('`\\', '~')  # composite for aadha ञ्
     return converted
